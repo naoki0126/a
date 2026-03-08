@@ -2,199 +2,338 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Mini Survivor</title>
+<title>Survivor Game</title>
+
 <style>
 body{
-    margin:0;
-    background:#111;
-    color:white;
-    font-family:sans-serif;
-    text-align:center;
-}
-
-#ui{
-    position:absolute;
-    top:10px;
-    left:50%;
-    transform:translateX(-50%);
-    font-size:20px;
+margin:0;
+background:#0b0b0b;
+color:white;
+font-family:sans-serif;
+overflow:hidden;
 }
 
 canvas{
-    background:#1a1a1a;
-    display:block;
-    margin:auto;
-    border:2px solid #444;
+background:#111;
+display:block;
+margin:auto;
+}
+
+#ui{
+position:absolute;
+top:10px;
+left:50%;
+transform:translateX(-50%);
+font-size:18px;
+}
+
+#levelup{
+position:absolute;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+background:#222;
+padding:20px;
+border:2px solid white;
+display:none;
+}
+
+.skill{
+margin:10px;
+padding:10px;
+background:#333;
+cursor:pointer;
 }
 </style>
+
 </head>
 <body>
 
 <div id="ui">
-HP: <span id="hp">100</span>　
-Score: <span id="score">0</span>
+HP:<span id="hp">100</span>
+Lv:<span id="lv">1</span>
+XP:<span id="xp">0</span>
+Score:<span id="score">0</span>
 </div>
 
-<canvas id="game" width="800" height="600"></canvas>
+<div id="levelup"></div>
+
+<canvas id="game" width="900" height="600"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
 
-let keys = {};
-let bullets = [];
-let enemies = [];
-let score = 0;
-let spawnTimer = 0;
-let shootTimer = 0;
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
 
-const player = {
-    x:400,
-    y:300,
-    size:15,
-    speed:4,
-    hp:100
-};
+let keys={}
+document.addEventListener("keydown",e=>keys[e.key]=true)
+document.addEventListener("keyup",e=>keys[e.key]=false)
 
-document.addEventListener("keydown",e=>keys[e.key]=true);
-document.addEventListener("keyup",e=>keys[e.key]=false);
+let bullets=[]
+let enemies=[]
+let orbs=[]
+
+let score=0
+let spawnTimer=0
+let shootTimer=0
+let difficulty=1
+
+const player={
+x:450,
+y:300,
+size:15,
+speed:3,
+hp:100,
+maxhp:100,
+level:1,
+xp:0,
+nextxp:10,
+bulletSpeed:6,
+bulletDamage:1,
+fireRate:30,
+bulletSize:5
+}
 
 function spawnEnemy(){
 
-    const side = Math.floor(Math.random()*4);
+let side=Math.floor(Math.random()*4)
 
-    let x,y;
+let x,y
 
-    if(side===0){ x=Math.random()*800; y=-20; }
-    if(side===1){ x=820; y=Math.random()*600; }
-    if(side===2){ x=Math.random()*800; y=620; }
-    if(side===3){ x=-20; y=Math.random()*600; }
+if(side===0){x=Math.random()*900;y=-20}
+if(side===1){x=920;y=Math.random()*600}
+if(side===2){x=Math.random()*900;y=620}
+if(side===3){x=-20;y=Math.random()*600}
 
-    enemies.push({
-        x,y,
-        size:12,
-        speed:1+Math.random()*0.5
-    });
+enemies.push({
+x,y,
+size:12,
+speed:1+Math.random()*difficulty,
+hp:2+difficulty
+})
+
 }
 
 function shoot(){
 
-    let nearest=null;
-    let dist=99999;
+let nearest=null
+let dist=99999
 
-    enemies.forEach(e=>{
-        let d=Math.hypot(e.x-player.x,e.y-player.y);
-        if(d<dist){
-            dist=d;
-            nearest=e;
-        }
-    });
+enemies.forEach(e=>{
+let d=Math.hypot(e.x-player.x,e.y-player.y)
+if(d<dist){
+dist=d
+nearest=e
+}
+})
 
-    if(!nearest) return;
+if(!nearest)return
 
-    let angle=Math.atan2(nearest.y-player.y,nearest.x-player.x);
+let angle=Math.atan2(nearest.y-player.y,nearest.x-player.x)
 
-    bullets.push({
-        x:player.x,
-        y:player.y,
-        vx:Math.cos(angle)*6,
-        vy:Math.sin(angle)*6,
-        size:5
-    });
+bullets.push({
+x:player.x,
+y:player.y,
+vx:Math.cos(angle)*player.bulletSpeed,
+vy:Math.sin(angle)*player.bulletSpeed,
+size:player.bulletSize,
+damage:player.bulletDamage
+})
+
+}
+
+function spawnOrb(x,y){
+orbs.push({x,y,size:4})
+}
+
+function updatePlayer(){
+
+if(keys["ArrowUp"]||keys["w"])player.y-=player.speed
+if(keys["ArrowDown"]||keys["s"])player.y+=player.speed
+if(keys["ArrowLeft"]||keys["a"])player.x-=player.speed
+if(keys["ArrowRight"]||keys["d"])player.x+=player.speed
+
+player.x=Math.max(0,Math.min(900,player.x))
+player.y=Math.max(0,Math.min(600,player.y))
+
+}
+
+function levelUp(){
+
+player.level++
+player.xp=0
+player.nextxp=Math.floor(player.nextxp*1.5)
+
+document.getElementById("lv").textContent=player.level
+
+showLevelUp()
+
+}
+
+function showLevelUp(){
+
+const panel=document.getElementById("levelup")
+panel.style.display="block"
+panel.innerHTML="<h3>LEVEL UP</h3>"
+
+const skills=[
+{name:"攻撃速度UP",effect:()=>player.fireRate*=0.8},
+{name:"弾サイズUP",effect:()=>player.bulletSize+=2},
+{name:"弾ダメージUP",effect:()=>player.bulletDamage+=1},
+{name:"移動速度UP",effect:()=>player.speed+=0.5},
+{name:"HP回復",effect:()=>player.hp=Math.min(player.maxhp,player.hp+30)},
+{name:"弾速度UP",effect:()=>player.bulletSpeed+=2}
+]
+
+let chosen=[]
+
+while(chosen.length<3){
+let s=skills[Math.floor(Math.random()*skills.length)]
+if(!chosen.includes(s))chosen.push(s)
+}
+
+chosen.forEach(skill=>{
+let div=document.createElement("div")
+div.className="skill"
+div.textContent=skill.name
+
+div.onclick=()=>{
+skill.effect()
+panel.style.display="none"
+}
+
+panel.appendChild(div)
+})
+
 }
 
 function update(){
 
-    if(keys["ArrowUp"]||keys["w"]) player.y-=player.speed;
-    if(keys["ArrowDown"]||keys["s"]) player.y+=player.speed;
-    if(keys["ArrowLeft"]||keys["a"]) player.x-=player.speed;
-    if(keys["ArrowRight"]||keys["d"]) player.x+=player.speed;
+updatePlayer()
 
-    player.x=Math.max(0,Math.min(800,player.x));
-    player.y=Math.max(0,Math.min(600,player.y));
+spawnTimer++
+if(spawnTimer>40/difficulty){
+spawnEnemy()
+spawnTimer=0
+}
 
-    spawnTimer++;
-    if(spawnTimer>40){
-        spawnEnemy();
-        spawnTimer=0;
-    }
+shootTimer++
+if(shootTimer>player.fireRate){
+shoot()
+shootTimer=0
+}
 
-    shootTimer++;
-    if(shootTimer>20){
-        shoot();
-        shootTimer=0;
-    }
+bullets.forEach(b=>{
+b.x+=b.vx
+b.y+=b.vy
+})
 
-    bullets.forEach(b=>{
-        b.x+=b.vx;
-        b.y+=b.vy;
-    });
+enemies.forEach(e=>{
 
-    enemies.forEach(e=>{
-        let angle=Math.atan2(player.y-e.y,player.x-e.x);
-        e.x+=Math.cos(angle)*e.speed;
-        e.y+=Math.sin(angle)*e.speed;
-    });
+let angle=Math.atan2(player.y-e.y,player.x-e.x)
+e.x+=Math.cos(angle)*e.speed
+e.y+=Math.sin(angle)*e.speed
 
-    bullets.forEach((b,bi)=>{
-        enemies.forEach((e,ei)=>{
-            let d=Math.hypot(b.x-e.x,b.y-e.y);
-            if(d<b.size+e.size){
-                enemies.splice(ei,1);
-                bullets.splice(bi,1);
-                score++;
-            }
-        });
-    });
+})
 
-    enemies.forEach(e=>{
-        let d=Math.hypot(player.x-e.x,player.y-e.y);
-        if(d<player.size+e.size){
-            player.hp-=0.2;
-        }
-    });
+bullets.forEach((b,bi)=>{
+enemies.forEach((e,ei)=>{
 
-    document.getElementById("hp").textContent=Math.floor(player.hp);
-    document.getElementById("score").textContent=score;
+let d=Math.hypot(b.x-e.x,b.y-e.y)
 
-    if(player.hp<=0){
-        alert("Game Over\nScore:"+score);
-        location.reload();
-    }
+if(d<b.size+e.size){
+
+e.hp-=b.damage
+bullets.splice(bi,1)
+
+if(e.hp<=0){
+spawnOrb(e.x,e.y)
+enemies.splice(ei,1)
+score++
+}
+
+}
+
+})
+})
+
+orbs.forEach((o,oi)=>{
+let d=Math.hypot(player.x-o.x,player.y-o.y)
+
+if(d<player.size+o.size){
+player.xp++
+orbs.splice(oi,1)
+
+if(player.xp>=player.nextxp){
+levelUp()
+}
+
+}
+
+})
+
+enemies.forEach(e=>{
+let d=Math.hypot(player.x-e.x,player.y-e.y)
+
+if(d<player.size+e.size){
+player.hp-=0.2
+}
+
+})
+
+difficulty+=0.0005
+
+document.getElementById("hp").textContent=Math.floor(player.hp)
+document.getElementById("xp").textContent=player.xp
+document.getElementById("score").textContent=score
+
+if(player.hp<=0){
+alert("GAME OVER\nScore:"+score)
+location.reload()
+}
+
 }
 
 function draw(){
 
-    ctx.clearRect(0,0,800,600);
+ctx.clearRect(0,0,900,600)
 
-    ctx.fillStyle="cyan";
-    ctx.beginPath();
-    ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
-    ctx.fill();
+ctx.fillStyle="cyan"
+ctx.beginPath()
+ctx.arc(player.x,player.y,player.size,0,Math.PI*2)
+ctx.fill()
 
-    ctx.fillStyle="yellow";
-    bullets.forEach(b=>{
-        ctx.beginPath();
-        ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-        ctx.fill();
-    });
+ctx.fillStyle="yellow"
+bullets.forEach(b=>{
+ctx.beginPath()
+ctx.arc(b.x,b.y,b.size,0,Math.PI*2)
+ctx.fill()
+})
 
-    ctx.fillStyle="red";
-    enemies.forEach(e=>{
-        ctx.beginPath();
-        ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
-        ctx.fill();
-    });
+ctx.fillStyle="red"
+enemies.forEach(e=>{
+ctx.beginPath()
+ctx.arc(e.x,e.y,e.size,0,Math.PI*2)
+ctx.fill()
+})
+
+ctx.fillStyle="lime"
+orbs.forEach(o=>{
+ctx.beginPath()
+ctx.arc(o.x,o.y,o.size,0,Math.PI*2)
+ctx.fill()
+})
+
 }
 
 function loop(){
-    update();
-    draw();
-    requestAnimationFrame(loop);
+update()
+draw()
+requestAnimationFrame(loop)
 }
 
-loop();
-</script>
+loop()
 
+</script>
 </body>
 </html>
