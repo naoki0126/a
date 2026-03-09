@@ -2,12 +2,13 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Survivor Game</title>
+<title>Ultra Survivor</title>
 
 <style>
+
 body{
 margin:0;
-background:#0b0b0b;
+background:#0a0a0a;
 color:white;
 font-family:sans-serif;
 overflow:hidden;
@@ -39,124 +40,164 @@ display:none;
 }
 
 .skill{
+background:#333;
 margin:10px;
 padding:10px;
-background:#333;
 cursor:pointer;
 }
-</style>
 
+</style>
 </head>
 <body>
 
 <div id="ui">
+
 HP:<span id="hp">100</span>
-Lv:<span id="lv">1</span>
+LV:<span id="lv">1</span>
 XP:<span id="xp">0</span>
 Score:<span id="score">0</span>
+
 </div>
 
 <div id="levelup"></div>
 
-<canvas id="game" width="900" height="600"></canvas>
+<canvas id="game" width="1000" height="650"></canvas>
 
 <script>
 
 const canvas = document.getElementById("game")
 const ctx = canvas.getContext("2d")
 
+let WIDTH = canvas.width
+let HEIGHT = canvas.height
+
 let keys={}
+let mouse={x:0,y:0}
+
 document.addEventListener("keydown",e=>keys[e.key]=true)
 document.addEventListener("keyup",e=>keys[e.key]=false)
 
+canvas.addEventListener("mousemove",e=>{
+const rect=canvas.getBoundingClientRect()
+mouse.x=e.clientX-rect.left
+mouse.y=e.clientY-rect.top
+})
+
+/* ========= ゲーム状態 ========= */
+
 let bullets=[]
 let enemies=[]
+let effects=[]
 let orbs=[]
+let weapons=[]
+let drones=[]
+let missiles=[]
+let flames=[]
 
 let score=0
-let spawnTimer=0
-let shootTimer=0
+let time=0
 let difficulty=1
 
+/* ========= プレイヤー ========= */
+
 const player={
-x:450,
-y:300,
+
+x:WIDTH/2,
+y:HEIGHT/2,
+
 size:15,
+
 speed:3,
+
 hp:100,
 maxhp:100,
+
 level:1,
 xp:0,
 nextxp:10,
-bulletSpeed:6,
+
+fireRate:25,
+bulletSpeed:7,
 bulletDamage:1,
-fireRate:30,
-bulletSize:5
+
+invincible:0
+
 }
 
-function spawnEnemy(){
+/* ========= ユーティリティ ========= */
 
-let side=Math.floor(Math.random()*4)
+function rand(min,max){
+return Math.random()*(max-min)+min
+}
 
-let x,y
+function dist(a,b){
+return Math.hypot(a.x-b.x,a.y-b.y)
+}
 
-if(side===0){x=Math.random()*900;y=-20}
-if(side===1){x=920;y=Math.random()*600}
-if(side===2){x=Math.random()*900;y=620}
-if(side===3){x=-20;y=Math.random()*600}
+/* ========= 入力 ========= */
 
-enemies.push({
-x,y,
-size:12,
-speed:1+Math.random()*difficulty,
-hp:2+difficulty
+function updatePlayer(){
+
+let sp=player.speed
+
+if(keys["Shift"])sp*=1.3
+
+if(keys["w"]||keys["ArrowUp"])player.y-=sp
+if(keys["s"]||keys["ArrowDown"])player.y+=sp
+if(keys["a"]||keys["ArrowLeft"])player.x-=sp
+if(keys["d"]||keys["ArrowRight"])player.x+=sp
+
+player.x=Math.max(0,Math.min(WIDTH,player.x))
+player.y=Math.max(0,Math.min(HEIGHT,player.y))
+
+}
+
+/* ========= 弾 ========= */
+
+function shootBullet(angle){
+
+bullets.push({
+
+x:player.x,
+y:player.y,
+
+vx:Math.cos(angle)*player.bulletSpeed,
+vy:Math.sin(angle)*player.bulletSpeed,
+
+size:5,
+damage:player.bulletDamage
+
 })
 
 }
 
-function shoot(){
+/* ========= 自動照準 ========= */
+
+function autoAim(){
 
 let nearest=null
-let dist=99999
+let best=999999
 
-enemies.forEach(e=>{
+for(let e of enemies){
+
 let d=Math.hypot(e.x-player.x,e.y-player.y)
-if(d<dist){
-dist=d
+
+if(d<best){
+best=d
 nearest=e
 }
-})
+
+}
 
 if(!nearest)return
 
 let angle=Math.atan2(nearest.y-player.y,nearest.x-player.x)
 
-bullets.push({
-x:player.x,
-y:player.y,
-vx:Math.cos(angle)*player.bulletSpeed,
-vy:Math.sin(angle)*player.bulletSpeed,
-size:player.bulletSize,
-damage:player.bulletDamage
-})
+shootBullet(angle)
 
 }
 
-function spawnOrb(x,y){
-orbs.push({x,y,size:4})
-}
-
-function updatePlayer(){
-
-if(keys["ArrowUp"]||keys["w"])player.y-=player.speed
-if(keys["ArrowDown"]||keys["s"])player.y+=player.speed
-if(keys["ArrowLeft"]||keys["a"])player.x-=player.speed
-if(keys["ArrowRight"]||keys["d"])player.x+=player.speed
-
-player.x=Math.max(0,Math.min(900,player.x))
-player.y=Math.max(0,Math.min(600,player.y))
-
-}
+/* ========= レベルアップ ========= */
 
 function levelUp(){
 
@@ -170,99 +211,9 @@ showLevelUp()
 
 }
 
-function showLevelUp(){
+function gainXP(v){
 
-const panel=document.getElementById("levelup")
-panel.style.display="block"
-panel.innerHTML="<h3>LEVEL UP</h3>"
-
-const skills=[
-{name:"攻撃速度UP",effect:()=>player.fireRate*=0.8},
-{name:"弾サイズUP",effect:()=>player.bulletSize+=2},
-{name:"弾ダメージUP",effect:()=>player.bulletDamage+=1},
-{name:"移動速度UP",effect:()=>player.speed+=0.5},
-{name:"HP回復",effect:()=>player.hp=Math.min(player.maxhp,player.hp+30)},
-{name:"弾速度UP",effect:()=>player.bulletSpeed+=2}
-]
-
-let chosen=[]
-
-while(chosen.length<3){
-let s=skills[Math.floor(Math.random()*skills.length)]
-if(!chosen.includes(s))chosen.push(s)
-}
-
-chosen.forEach(skill=>{
-let div=document.createElement("div")
-div.className="skill"
-div.textContent=skill.name
-
-div.onclick=()=>{
-skill.effect()
-panel.style.display="none"
-}
-
-panel.appendChild(div)
-})
-
-}
-
-function update(){
-
-updatePlayer()
-
-spawnTimer++
-if(spawnTimer>40/difficulty){
-spawnEnemy()
-spawnTimer=0
-}
-
-shootTimer++
-if(shootTimer>player.fireRate){
-shoot()
-shootTimer=0
-}
-
-bullets.forEach(b=>{
-b.x+=b.vx
-b.y+=b.vy
-})
-
-enemies.forEach(e=>{
-
-let angle=Math.atan2(player.y-e.y,player.x-e.x)
-e.x+=Math.cos(angle)*e.speed
-e.y+=Math.sin(angle)*e.speed
-
-})
-
-bullets.forEach((b,bi)=>{
-enemies.forEach((e,ei)=>{
-
-let d=Math.hypot(b.x-e.x,b.y-e.y)
-
-if(d<b.size+e.size){
-
-e.hp-=b.damage
-bullets.splice(bi,1)
-
-if(e.hp<=0){
-spawnOrb(e.x,e.y)
-enemies.splice(ei,1)
-score++
-}
-
-}
-
-})
-})
-
-orbs.forEach((o,oi)=>{
-let d=Math.hypot(player.x-o.x,player.y-o.y)
-
-if(d<player.size+o.size){
-player.xp++
-orbs.splice(oi,1)
+player.xp+=v
 
 if(player.xp>=player.nextxp){
 levelUp()
@@ -270,70 +221,1243 @@ levelUp()
 
 }
 
-})
+/* ========= レベルアップUI ========= */
 
-enemies.forEach(e=>{
-let d=Math.hypot(player.x-e.x,player.y-e.y)
+function showLevelUp(){
 
-if(d<player.size+e.size){
-player.hp-=0.2
+const panel=document.getElementById("levelup")
+
+panel.style.display="block"
+
+panel.innerHTML="<h3>LEVEL UP</h3>"
+
+let skills=[
+
+{name:"攻撃速度UP",effect:()=>player.fireRate*=0.85},
+{name:"弾速度UP",effect:()=>player.bulletSpeed+=2},
+{name:"弾ダメージUP",effect:()=>player.bulletDamage+=1},
+{name:"移動速度UP",effect:()=>player.speed+=0.5},
+{name:"HP回復",effect:()=>player.hp=Math.min(player.maxhp,player.hp+40)}
+
+]
+
+let list=[]
+
+while(list.length<3){
+
+let s=skills[Math.floor(Math.random()*skills.length)]
+
+if(!list.includes(s))list.push(s)
+
 }
 
-})
+for(let s of list){
 
-difficulty+=0.0005
+let div=document.createElement("div")
+
+div.className="skill"
+div.textContent=s.name
+
+div.onclick=()=>{
+
+s.effect()
+
+panel.style.display="none"
+
+}
+
+panel.appendChild(div)
+
+}
+
+}
+
+/* ========= 更新 ========= */
+
+let fireTimer=0
+
+function update(){
+
+time++
+
+updatePlayer()
+
+fireTimer++
+
+if(fireTimer>player.fireRate){
+
+autoAim()
+
+fireTimer=0
+
+}
+
+updateBullets()
+
+}
+
+/* ========= 弾更新 ========= */
+
+function updateBullets(){
+
+for(let b of bullets){
+
+b.x+=b.vx
+b.y+=b.vy
+
+}
+
+bullets=bullets.filter(b=>b.x>-20&&b.x<WIDTH+20&&b.y>-20&&b.y<HEIGHT+20)
+
+}
+
+/* ========= 描画 ========= */
+
+function drawPlayer(){
+
+ctx.fillStyle="cyan"
+
+ctx.beginPath()
+ctx.arc(player.x,player.y,player.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+function drawBullets(){
+
+ctx.fillStyle="yellow"
+
+for(let b of bullets){
+
+ctx.beginPath()
+ctx.arc(b.x,b.y,b.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+function drawUI(){
 
 document.getElementById("hp").textContent=Math.floor(player.hp)
 document.getElementById("xp").textContent=player.xp
 document.getElementById("score").textContent=score
 
-if(player.hp<=0){
-alert("GAME OVER\nScore:"+score)
-location.reload()
 }
 
-}
+/* ========= メイン描画 ========= */
 
 function draw(){
 
-ctx.clearRect(0,0,900,600)
+ctx.clearRect(0,0,WIDTH,HEIGHT)
 
-ctx.fillStyle="cyan"
-ctx.beginPath()
-ctx.arc(player.x,player.y,player.size,0,Math.PI*2)
-ctx.fill()
+drawPlayer()
 
-ctx.fillStyle="yellow"
-bullets.forEach(b=>{
-ctx.beginPath()
-ctx.arc(b.x,b.y,b.size,0,Math.PI*2)
-ctx.fill()
-})
-
-ctx.fillStyle="red"
-enemies.forEach(e=>{
-ctx.beginPath()
-ctx.arc(e.x,e.y,e.size,0,Math.PI*2)
-ctx.fill()
-})
-
-ctx.fillStyle="lime"
-orbs.forEach(o=>{
-ctx.beginPath()
-ctx.arc(o.x,o.y,o.size,0,Math.PI*2)
-ctx.fill()
-})
+drawBullets()
 
 }
 
+/* ========= ループ ========= */
+
 function loop(){
+
 update()
+
 draw()
+
+drawUI()
+
 requestAnimationFrame(loop)
+
 }
 
 loop()
 
 </script>
 </body>
-</html>
+</html>/* =========================
+   敵システム
+========================= */
+
+function spawnEnemy(){
+
+let side=Math.floor(Math.random()*4)
+
+let x,y
+
+if(side===0){x=Math.random()*WIDTH;y=-30}
+if(side===1){x=WIDTH+30;y=Math.random()*HEIGHT}
+if(side===2){x=Math.random()*WIDTH;y=HEIGHT+30}
+if(side===3){x=-30;y=Math.random()*HEIGHT}
+
+/* 敵タイプ */
+
+let type=Math.floor(rand(0,6))
+
+let enemy={
+
+x:x,
+y:y,
+
+vx:0,
+vy:0,
+
+type:type,
+
+size:12,
+speed:1.2,
+hp:3,
+damage:5
+
+}
+
+/* タイプ別能力 */
+
+if(type===0){
+
+enemy.size=12
+enemy.speed=1.5
+enemy.hp=3
+
+}
+
+if(type===1){
+
+enemy.size=18
+enemy.speed=0.8
+enemy.hp=8
+
+}
+
+if(type===2){
+
+enemy.size=10
+enemy.speed=2.5
+enemy.hp=2
+
+}
+
+if(type===3){
+
+enemy.size=22
+enemy.speed=0.6
+enemy.hp=15
+
+}
+
+if(type===4){
+
+enemy.size=14
+enemy.speed=1.8
+enemy.hp=5
+
+}
+
+if(type===5){
+
+enemy.size=8
+enemy.speed=3
+enemy.hp=1
+
+}
+
+enemies.push(enemy)
+
+}
+
+/* =========================
+   敵更新
+========================= */
+
+function updateEnemies(){
+
+for(let e of enemies){
+
+let angle=Math.atan2(player.y-e.y,player.x-e.x)
+
+e.vx=Math.cos(angle)*e.speed
+e.vy=Math.sin(angle)*e.speed
+
+e.x+=e.vx
+e.y+=e.vy
+
+}
+
+/* プレイヤー衝突 */
+
+for(let e of enemies){
+
+let d=Math.hypot(player.x-e.x,player.y-e.y)
+
+if(d<player.size+e.size){
+
+if(player.invincible<=0){
+
+player.hp-=e.damage
+player.invincible=30
+
+}
+
+}
+
+}
+
+if(player.invincible>0)player.invincible--
+
+}
+
+/* =========================
+   弾ヒット判定
+========================= */
+
+function bulletHits(){
+
+for(let i=bullets.length-1;i>=0;i--){
+
+let b=bullets[i]
+
+for(let j=enemies.length-1;j>=0;j--){
+
+let e=enemies[j]
+
+let d=Math.hypot(b.x-e.x,b.y-e.y)
+
+if(d<b.size+e.size){
+
+e.hp-=b.damage
+
+/* ノックバック */
+
+let angle=Math.atan2(e.y-b.y,e.x-b.x)
+
+e.x+=Math.cos(angle)*8
+e.y+=Math.sin(angle)*8
+
+bullets.splice(i,1)
+
+if(e.hp<=0){
+
+spawnOrb(e.x,e.y)
+
+score++
+
+enemies.splice(j,1)
+
+}
+
+break
+
+}
+
+}
+
+}
+
+}
+
+/* =========================
+   経験値オーブ
+========================= */
+
+function spawnOrb(x,y){
+
+orbs.push({
+
+x:x,
+y:y,
+size:5,
+vx:0,
+vy:0
+
+})
+
+}
+
+function updateOrbs(){
+
+for(let o of orbs){
+
+let d=Math.hypot(player.x-o.x,player.y-o.y)
+
+if(d<120){
+
+let angle=Math.atan2(player.y-o.y,player.x-o.x)
+
+o.vx+=Math.cos(angle)*0.3
+o.vy+=Math.sin(angle)*0.3
+
+}
+
+o.x+=o.vx
+o.y+=o.vy
+
+}
+
+/* 取得 */
+
+for(let i=orbs.length-1;i>=0;i--){
+
+let o=orbs[i]
+
+let d=Math.hypot(player.x-o.x,player.y-o.y)
+
+if(d<player.size+o.size){
+
+gainXP(1)
+
+orbs.splice(i,1)
+
+}
+
+}
+
+}
+
+/* =========================
+   描画
+========================= */
+
+function drawEnemies(){
+
+for(let e of enemies){
+
+if(e.type===0)ctx.fillStyle="#ff5555"
+if(e.type===1)ctx.fillStyle="#ff8844"
+if(e.type===2)ctx.fillStyle="#ff2222"
+if(e.type===3)ctx.fillStyle="#aa3333"
+if(e.type===4)ctx.fillStyle="#ff66aa"
+if(e.type===5)ctx.fillStyle="#ff0000"
+
+ctx.beginPath()
+ctx.arc(e.x,e.y,e.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+function drawOrbs(){
+
+ctx.fillStyle="lime"
+
+for(let o of orbs){
+
+ctx.beginPath()
+ctx.arc(o.x,o.y,o.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+/* =========================
+   スポーン制御
+========================= */
+
+let spawnTimer=0
+
+function enemySpawner(){
+
+spawnTimer++
+
+if(spawnTimer>40/difficulty){
+
+spawnEnemy()
+
+spawnTimer=0
+
+}
+
+}
+
+/* =========================
+   update拡張
+========================= */
+
+const oldUpdate = update
+
+update=function(){
+
+oldUpdate()
+
+enemySpawner()
+
+updateEnemies()
+
+bulletHits()
+
+updateOrbs()
+
+difficulty+=0.0004
+
+}
+
+/* =========================
+   draw拡張
+========================= */
+
+const oldDraw = draw
+
+draw=function(){
+
+oldDraw()
+
+drawEnemies()
+
+drawOrbs()
+
+}/* =========================
+   武器レベル
+========================= */
+
+let weaponLevels={
+blade:0,
+drone:0,
+laser:0,
+missile:0,
+flame:0
+}
+
+/* =========================
+   回転ブレード
+========================= */
+
+let blades=[]
+
+function addBlade(){
+
+weaponLevels.blade++
+
+blades.push({
+
+angle:Math.random()*Math.PI*2,
+dist:40+blades.length*10,
+speed:0.05,
+size:12,
+damage:2
+
+})
+
+}
+
+function updateBlades(){
+
+for(let b of blades){
+
+b.angle+=b.speed
+
+b.x=player.x+Math.cos(b.angle)*b.dist
+b.y=player.y+Math.sin(b.angle)*b.dist
+
+for(let e of enemies){
+
+let d=Math.hypot(b.x-e.x,b.y-e.y)
+
+if(d<b.size+e.size){
+
+e.hp-=b.damage
+
+}
+
+}
+
+}
+
+}
+
+function drawBlades(){
+
+ctx.fillStyle="white"
+
+for(let b of blades){
+
+ctx.beginPath()
+ctx.arc(b.x,b.y,b.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+/* =========================
+   ドローン
+========================= */
+
+function addDrone(){
+
+weaponLevels.drone++
+
+drones.push({
+
+x:player.x,
+y:player.y,
+
+speed:3,
+size:10,
+damage:2
+
+})
+
+}
+
+function updateDrones(){
+
+for(let d of drones){
+
+let nearest=null
+let best=99999
+
+for(let e of enemies){
+
+let dist=Math.hypot(e.x-d.x,e.y-d.y)
+
+if(dist<best){
+
+best=dist
+nearest=e
+
+}
+
+}
+
+if(nearest){
+
+let ang=Math.atan2(nearest.y-d.y,nearest.x-d.x)
+
+d.x+=Math.cos(ang)*d.speed
+d.y+=Math.sin(ang)*d.speed
+
+if(best<d.size+nearest.size){
+
+nearest.hp-=d.damage
+
+}
+
+}
+
+}
+
+}
+
+function drawDrones(){
+
+ctx.fillStyle="cyan"
+
+for(let d of drones){
+
+ctx.beginPath()
+ctx.arc(d.x,d.y,d.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+/* =========================
+   レーザー
+========================= */
+
+let lasers=[]
+
+function shootLaser(){
+
+let nearest=null
+let best=99999
+
+for(let e of enemies){
+
+let d=Math.hypot(e.x-player.x,e.y-player.y)
+
+if(d<best){
+
+best=d
+nearest=e
+
+}
+
+}
+
+if(!nearest)return
+
+let ang=Math.atan2(nearest.y-player.y,nearest.x-player.x)
+
+lasers.push({
+
+x:player.x,
+y:player.y,
+
+angle:ang,
+life:10,
+length:400,
+damage:4
+
+})
+
+}
+
+function updateLasers(){
+
+for(let l of lasers){
+
+l.life--
+
+for(let e of enemies){
+
+let dx=e.x-player.x
+let dy=e.y-player.y
+
+let ang=Math.atan2(dy,dx)
+
+if(Math.abs(ang-l.angle)<0.2){
+
+let dist=Math.hypot(dx,dy)
+
+if(dist<l.length){
+
+e.hp-=l.damage
+
+}
+
+}
+
+}
+
+}
+
+lasers=lasers.filter(l=>l.life>0)
+
+}
+
+function drawLasers(){
+
+ctx.strokeStyle="lime"
+ctx.lineWidth=4
+
+for(let l of lasers){
+
+ctx.beginPath()
+
+ctx.moveTo(player.x,player.y)
+
+ctx.lineTo(
+
+player.x+Math.cos(l.angle)*l.length,
+player.y+Math.sin(l.angle)*l.length
+
+)
+
+ctx.stroke()
+
+}
+
+}
+
+/* =========================
+   ミサイル
+========================= */
+
+function shootMissile(){
+
+let nearest=null
+let best=99999
+
+for(let e of enemies){
+
+let d=Math.hypot(e.x-player.x,e.y-player.y)
+
+if(d<best){
+
+best=d
+nearest=e
+
+}
+
+}
+
+if(!nearest)return
+
+missiles.push({
+
+x:player.x,
+y:player.y,
+
+target:nearest,
+
+speed:4,
+size:6,
+damage:6
+
+})
+
+}
+
+function updateMissiles(){
+
+for(let m of missiles){
+
+if(!m.target)continue
+
+let ang=Math.atan2(m.target.y-m.y,m.target.x-m.x)
+
+m.x+=Math.cos(ang)*m.speed
+m.y+=Math.sin(ang)*m.speed
+
+let d=Math.hypot(m.x-m.target.x,m.y-m.target.y)
+
+if(d<m.size+m.target.size){
+
+m.target.hp-=m.damage
+
+m.dead=true
+
+}
+
+}
+
+missiles=missiles.filter(m=>!m.dead)
+
+}
+
+function drawMissiles(){
+
+ctx.fillStyle="orange"
+
+for(let m of missiles){
+
+ctx.beginPath()
+ctx.arc(m.x,m.y,m.size,0,Math.PI*2)
+ctx.fill()
+
+}
+
+}
+
+/* =========================
+   火炎放射
+========================= */
+
+function shootFlame(){
+
+let ang=Math.atan2(mouse.y-player.y,mouse.x-player.x)
+
+flames.push({
+
+x:player.x,
+y:player.y,
+
+angle:ang,
+
+life:15,
+range:100,
+damage:1
+
+})
+
+}
+
+function updateFlames(){
+
+for(let f of flames){
+
+f.life--
+
+for(let e of enemies){
+
+let ang=Math.atan2(e.y-player.y,e.x-player.x)
+
+if(Math.abs(ang-f.angle)<0.5){
+
+let d=Math.hypot(e.x-player.x,e.y-player.y)
+
+if(d<f.range){
+
+e.hp-=f.damage
+
+}
+
+}
+
+}
+
+}
+
+flames=flames.filter(f=>f.life>0)
+
+}
+
+function drawFlames(){
+
+ctx.strokeStyle="orange"
+ctx.lineWidth=8
+
+for(let f of flames){
+
+ctx.beginPath()
+
+ctx.moveTo(player.x,player.y)
+
+ctx.lineTo(
+
+player.x+Math.cos(f.angle)*f.range,
+player.y+Math.sin(f.angle)*f.range
+
+)
+
+ctx.stroke()
+
+}
+
+}
+
+/* =========================
+   武器タイマー
+========================= */
+
+let laserTimer=0
+let missileTimer=0
+let flameTimer=0
+
+function updateWeapons(){
+
+updateBlades()
+updateDrones()
+updateLasers()
+updateMissiles()
+updateFlames()
+
+laserTimer++
+missileTimer++
+flameTimer++
+
+if(weaponLevels.laser>0 && laserTimer>120){
+
+shootLaser()
+laserTimer=0
+
+}
+
+if(weaponLevels.missile>0 && missileTimer>80){
+
+shootMissile()
+missileTimer=0
+
+}
+
+if(weaponLevels.flame>0 && flameTimer>10){
+
+shootFlame()
+flameTimer=0
+
+}
+
+}
+
+/* =========================
+   武器描画
+========================= */
+
+function drawWeapons(){
+
+drawBlades()
+drawDrones()
+drawLasers()
+drawMissiles()
+drawFlames()
+
+}
+
+/* =========================
+   update拡張
+========================= */
+
+const prevUpdate=update
+
+update=function(){
+
+prevUpdate()
+
+updateWeapons()
+
+}
+
+/* =========================
+   draw拡張
+========================= */
+
+const prevDraw=draw
+
+draw=function(){
+
+prevDraw()
+
+drawWeapons()
+
+}/* =========================
+   ボスシステム
+========================= */
+
+let boss=null
+let bossTimer=0
+
+function spawnBoss(){
+
+boss={
+
+x:WIDTH/2,
+y:-100,
+
+size:60,
+
+speed:0.6,
+
+hp:400,
+maxhp:400,
+
+damage:20
+
+}
+
+}
+
+function updateBoss(){
+
+bossTimer++
+
+/* 60秒ごと */
+
+if(!boss && bossTimer>3600){
+
+spawnBoss()
+
+}
+
+if(!boss)return
+
+let ang=Math.atan2(player.y-boss.y,player.x-boss.x)
+
+boss.x+=Math.cos(ang)*boss.speed
+boss.y+=Math.sin(ang)*boss.speed
+
+/* プレイヤー衝突 */
+
+let d=Math.hypot(player.x-boss.x,player.y-boss.y)
+
+if(d<player.size+boss.size){
+
+player.hp-=0.5
+
+}
+
+/* 弾ヒット */
+
+for(let b of bullets){
+
+let dist=Math.hypot(b.x-boss.x,b.y-boss.y)
+
+if(dist<b.size+boss.size){
+
+boss.hp-=b.damage
+
+}
+
+}
+
+if(boss.hp<=0){
+
+score+=100
+
+boss=null
+
+}
+
+}
+
+function drawBoss(){
+
+if(!boss)return
+
+ctx.fillStyle="purple"
+
+ctx.beginPath()
+ctx.arc(boss.x,boss.y,boss.size,0,Math.PI*2)
+ctx.fill()
+
+/* HPバー */
+
+ctx.fillStyle="red"
+
+ctx.fillRect(
+WIDTH/2-200,
+20,
+400*(boss.hp/boss.maxhp),
+10
+)
+
+}
+
+/* =========================
+   ダメージ数字
+========================= */
+
+let damageTexts=[]
+
+function showDamage(x,y,val){
+
+damageTexts.push({
+
+x:x,
+y:y,
+value:val,
+life:40
+
+})
+
+}
+
+function updateDamage(){
+
+for(let d of damageTexts){
+
+d.y-=0.5
+d.life--
+
+}
+
+damageTexts=damageTexts.filter(d=>d.life>0)
+
+}
+
+function drawDamage(){
+
+ctx.fillStyle="white"
+ctx.font="14px sans-serif"
+
+for(let d of damageTexts){
+
+ctx.fillText(d.value,d.x,d.y)
+
+}
+
+}
+
+/* =========================
+   ミニマップ
+========================= */
+
+function drawMiniMap(){
+
+let w=160
+let h=100
+
+ctx.fillStyle="black"
+ctx.fillRect(WIDTH-w-10,HEIGHT-h-10,w,h)
+
+ctx.fillStyle="cyan"
+
+ctx.fillRect(
+WIDTH-w-10+(player.x/WIDTH)*w,
+HEIGHT-h-10+(player.y/HEIGHT)*h,
+4,4
+)
+
+ctx.fillStyle="red"
+
+for(let e of enemies){
+
+ctx.fillRect(
+WIDTH-w-10+(e.x/WIDTH)*w,
+HEIGHT-h-10+(e.y/HEIGHT)*h,
+3,3
+)
+
+}
+
+}
+
+/* =========================
+   ポーズ
+========================= */
+
+let paused=false
+
+document.addEventListener("keydown",e=>{
+
+if(e.key==="p")paused=!paused
+
+})
+
+const oldLoop=loop
+
+loop=function(){
+
+if(!paused){
+
+update()
+
+}
+
+draw()
+
+drawUI()
+
+requestAnimationFrame(loop)
+
+}
+
+/* =========================
+   ゲームクリア
+========================= */
+
+let gameTime=0
+
+function updateGameTime(){
+
+gameTime++
+
+/* 5分 survival */
+
+if(gameTime>18000){
+
+alert("GAME CLEAR")
+
+location.reload()
+
+}
+
+}
+
+/* =========================
+   update拡張
+========================= */
+
+const prevUpdate2=update
+
+update=function(){
+
+prevUpdate2()
+
+updateBoss()
+
+updateDamage()
+
+updateGameTime()
+
+}
+
+/* =========================
+   draw拡張
+========================= */
+
+const prevDraw2=draw
+
+draw=function(){
+
+prevDraw2()
+
+drawBoss()
+
+drawDamage()
+
+drawMiniMap()
+
+}
